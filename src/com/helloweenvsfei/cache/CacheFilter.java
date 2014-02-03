@@ -19,15 +19,22 @@ import javax.servlet.ServletRequest;
 import javax.servlet.ServletResponse;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-
+/*
+如果不明白這個過濾器為你作了什麼事，可以在啟動這個web app之後，到Tomcat7的工作目錄下
+快取的頁面也許是
+/home/anntony/workspaceEE/.metadata/.plugins/org.eclipse.wst.server.core/tmp0/work/Catalina/localhost/king6/mm.jsp
+/home/anntony/workspaceEE/.metadata/.plugins/org.eclipse.wst.server.core/tmp0/work/Catalina/localhost/king6/index.jsp
+把這些副檔名是.jsp的檔案用記事本打開來看看
+會發現這些居然是被cache的靜態的HTML頁面
+*/
 public class CacheFilter implements Filter {
 
 	private ServletContext servletContext;
 
-	// �֨�O�����ɮק��A�ϥ�Tomcat�u�@�ؿ�
+	// 快取檔案夾，使用Tomcat工作目錄
 	private File temporalDir;
 
-	// �֨�O����ɶ��A�]�w�bFilter��l�ưѼƤ�
+	// 快取記憶體時間，設定在Filter初使化參數中
 	private long cacheTime = Long.MAX_VALUE;
 
 	public void init(FilterConfig config) throws ServletException {
@@ -44,55 +51,58 @@ public class CacheFilter implements Filter {
 		HttpServletRequest request = (HttpServletRequest) req;
 		HttpServletResponse response = (HttpServletResponse) res;
 
-		// �p�G�� POST, �h���g�L�֨�O����
+		// 如果為POST，則不經過快取記憶體
 		if ("POST".equals(request.getMethod())) {
 			chain.doFilter(request, response);
 			return;
 		}
 
-		// �ШD�� URI
+		// 請求的 URI
 		String uri = request.getRequestURI();
 		if (uri == null)
 			uri = "";
+		// 替換特殊字元
 		uri = uri.replace(request.getContextPath() + "/", "");
 		uri = uri.trim().length() == 0 ? "index.jsp" : uri;
 		uri = request.getQueryString() == null ? uri : (uri + "?" + request
 				.getQueryString());
 
-		// �������֨�O�����ɮ�
+		//對應的快取檔案
 		File cacheFile = new File(temporalDir, URLEncoder.encode(uri, "UTF-8"));
 		System.out.println("get the cache file : " + cacheFile);
 		System.out.println("javax.servlet.context.tempdir = " + temporalDir);
 		
 
-		// �p�G�֨�O�����ɮפ��s�b �Ϊ̤w�g�W�X�֨�O����ɶ� �h�ШD Servlet
+		// 如果快取檔案不存在，或者快取已經逾時，則請求Servlet
 		if (!cacheFile.exists()
 				|| cacheFile.length() == 0
 				|| cacheFile.lastModified() < System.currentTimeMillis()
 						- cacheTime) {
 
+			// 自訂response，用於快取記憶體輸出內容
 			CacheResponseWrapper cacheResponse = new CacheResponseWrapper(
 					response);
 
 			chain.doFilter(request, cacheResponse);
 
-			// �N���e�g�J�֨�O�����ɮ�
+			//將快取記憶體的內容寫入快取檔案
 			char[] content = cacheResponse.getCacheWriter().toCharArray();
 
-			temporalDir.mkdirs();
-			cacheFile.createNewFile();
+			temporalDir.mkdirs();		//建立資料夾
+			cacheFile.createNewFile();	//建立新快取檔案
 
+			//輸出到檔案中
 			Writer writer = new OutputStreamWriter(new FileOutputStream(
 					cacheFile), "UTF-8");
 			writer.write(content);
 			writer.close();
 		}
 
-		// �ШD��ContentType
+		// 設定請求的ContentType
 		String mimeType = servletContext.getMimeType(request.getRequestURI());
 		response.setContentType(mimeType);
 
-		// Ū��֨�O�����ɮת����e�A�g�J�Ȥ���s��
+		// 讀取快取檔案的內容，寫入用戶端瀏覽器
 		Reader ins = new InputStreamReader(new FileInputStream(cacheFile),
 				"UTF-8");
 		StringBuffer buffer = new StringBuffer();
@@ -102,7 +112,7 @@ public class CacheFilter implements Filter {
 			buffer.append(cbuf, 0, len);
 		}
 		ins.close();
-		// ��X��Ȥ��
+		// 輸出到用戶端
 		response.getWriter().write(buffer.toString());
 	}
 
